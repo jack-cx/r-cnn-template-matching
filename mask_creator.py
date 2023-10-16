@@ -9,13 +9,10 @@ class AugmentedDataset():
     def __init__(self, root):
         self.root = root
 
-        # self.imgs_backgrounds = list(sorted(os.listdir(os.path.join(root, 'backgrounds'))))
         self.imgs_backgrounds = list(
             sorted([f for f in os.listdir(os.path.join(root, 'backgrounds')) if not f.startswith('.')]))
         self.imgs_templates = list(
             sorted([f for f in os.listdir(os.path.join(root, 'templates')) if not f.startswith('.')]))
-
-        self.template_masks = self.create_template_masks(self.imgs_templates)
 
         # number of max copies of the same template in one augmented image
         self.max_templates = 3
@@ -36,6 +33,8 @@ class AugmentedDataset():
         self.max_perspective = 0.2
         # maximum blur for image augmentation
         self.max_blur = 3.0
+
+        self.template_masks = self.create_template_masks(self.imgs_templates)
 
     def create_template_masks(self, imgs_templates):
         template_masks = []
@@ -101,10 +100,9 @@ class AugmentedDataset():
                 col += 1
 
                 background_mask = 1.0 - template_mask
-
-                for c in range(0, 3):
-                    background[y1:y2, x1:x2, c] = (
-                            template_mask * template[:, :, c] + background_mask * background[y1:y2, x1:x2, c])
+                chanel = np.random.randint(0, 3)
+                background[y1:y2, x1:x2, chanel] = (
+                        template_mask * template[:, :, chanel] + background_mask * background[y1:y2, x1:x2, chanel])
 
         return background, mask_array
 
@@ -181,6 +179,17 @@ class AugmentedDataset():
     def blurr_image(self, image, sigma):
         image = cv2.GaussianBlur(image, (0, 0), sigmaX=sigma)
         return image
+    
+    def random_select_templates(self, n: int):
+        random_templates = []
+        for i in range(0, n):
+            r = np.random.randint(0, len(self.imgs_templates))
+            template_path = os.path.join(self.root, 'templates', self.imgs_templates[r])
+            img = cv2.imread(template_path, cv2.IMREAD_UNCHANGED)
+            
+            random_templates.append((r, img))
+        return random_templates
+        
 
     def get_train_data(self, amount):
         aug_imgs = []
@@ -191,14 +200,13 @@ class AugmentedDataset():
             print("Image: {}".format(i))
             background_name = self.get_random_background()
             background = cv2.imread(os.path.join(self.root, 'backgrounds', background_name), cv2.IMREAD_UNCHANGED)
+            background = cv2.resize(src=background, dsize=(300, 200))
             background_size = background.shape[0] * background.shape[1]
 
             stitch_templates = []
             stitch_template_masks = []
             temp_count = []
-            for j in range(len(self.imgs_templates)):
-                template = cv2.imread(os.path.join(self.root, 'templates', self.imgs_templates[j]),
-                                      cv2.IMREAD_UNCHANGED)
+            for j, template in self.random_select_templates(3):
                 template_size = template.shape[0] * template.shape[1]
 
                 temp_back_rel = template_size / background_size
@@ -216,7 +224,6 @@ class AugmentedDataset():
                     stitch_templates.append(augmented_templates)
                     stitch_template_masks.append(augmented_template_masks)
                 temp_count.append(rand)
-                # print(rand)
 
             background_angle = np.random.uniform(-self.max_augm_rot, self.max_augm_rot)
             # background = self.rotate_image(aug_mask[k], background_angle)
@@ -226,7 +233,7 @@ class AugmentedDataset():
             # rotate the stitched images and masks for rotation augmentation
             for k in range(len(aug_mask)):
                 aug_mask[k] = self.rotate_image(aug_mask[k], background_angle, cv2.INTER_LINEAR)
-            aug_img = self.rotate_image(aug_img, background_angle)
+            #aug_img = self.rotate_image(aug_img, background_angle)
 
             # change the illumination of the stitches images for illumination augmentation
             gamma = np.random.uniform(self.min_illum, self.max_illum)
@@ -234,7 +241,7 @@ class AugmentedDataset():
 
             # introduce Gaussian blur to the stitches images for blur augmentation
             sigma = np.random.uniform(self.max_blur)
-            aug_img = self.blurr_image(aug_img, sigma)
+            #aug_img = self.blurr_image(aug_img, sigma)
 
             cv2.imwrite("dataset/images/{}.png".format(i), aug_img)
             os.mkdir("dataset/masks/{}".format(i))
