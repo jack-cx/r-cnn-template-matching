@@ -21,7 +21,7 @@ class AugmentedDataset():
         self.max_temp_back_rel = 20
         # min scale of template when scaling the image down
         # the larger this value, the larger is the minimum template size relative to its background
-        self.min_augm_scale = 0.7
+        self.augm_scale = 1
         # max rotation angle in the augmentation
         self.max_augm_rot = 20.0
         self.max_augm_rot_tem = 40.0
@@ -41,7 +41,7 @@ class AugmentedDataset():
         for template_name in imgs_templates:
             template = cv2.imread(os.path.join(self.root, 'templates', template_name), cv2.IMREAD_UNCHANGED)
             alpha_channel = template[:, :, 3]
-            _, template_mask = cv2.threshold(alpha_channel, 254, 1, cv2.THRESH_BINARY)
+            _, template_mask = cv2.threshold(alpha_channel, 1, 1, cv2.THRESH_BINARY)
             template_mask = template_mask.reshape((alpha_channel.shape[0], alpha_channel.shape[1]))
             template_masks.append(template_mask)
         return template_masks
@@ -50,61 +50,52 @@ class AugmentedDataset():
         idx = np.random.randint(0, len(self.imgs_backgrounds))
         return self.imgs_backgrounds[idx]
 
-    def augment_templates(self, template, template_mask, amount):
-        augmented_templates = []
-        augmented_template_masks = []
-        for i in range(amount):
-            scale = np.random.uniform(self.min_augm_scale, 1.0)
-            template = cv2.resize(template, dsize=(0, 0), fx=scale, fy=scale)
-            template_mask = cv2.resize(template_mask, dsize=(0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-            angle = np.random.uniform(-self.max_augm_rot_tem, self.max_augm_rot_tem)
-            template = self.rotate_image_keep_size(template, angle)
-            template_mask = self.rotate_image_keep_size(template_mask, angle)
-            horizontal_perspective = np.random.uniform(-self.max_perspective, self.max_perspective)
-            vertical_perspective = np.random.uniform(-self.max_perspective, self.max_perspective)
-            template = self.perspective_transformation(template, horizontal_perspective, vertical_perspective)
-            template_mask = self.perspective_transformation(template_mask, horizontal_perspective, vertical_perspective)
+    def augment_templates(self, template, template_mask):
+        template = cv2.resize(template, dsize=(0, 0), fx=self.augm_scale, fy=self.augm_scale)
+        template_mask = cv2.resize(template_mask, dsize=(0, 0), fx=self.augm_scale, fy=self.augm_scale, interpolation=cv2.INTER_AREA)
+        angle = np.random.uniform(-self.max_augm_rot_tem, self.max_augm_rot_tem)
+        template = self.rotate_image_keep_size(template, angle)
+        template_mask = self.rotate_image_keep_size(template_mask, angle)
+        horizontal_perspective = np.random.uniform(-self.max_perspective, self.max_perspective)
+        vertical_perspective = np.random.uniform(-self.max_perspective, self.max_perspective)
+        template = self.perspective_transformation(template, horizontal_perspective, vertical_perspective)
+        template_mask = self.perspective_transformation(template_mask, horizontal_perspective, vertical_perspective)
 
-            augmented_templates.append(template)
-            augmented_template_masks.append(template_mask)
-
-        return augmented_templates, augmented_template_masks
+        return template, template_mask
 
     def stitch_templates_to_background(self, background, templates, template_masks, temp_count):
         back_height = np.shape(background)[0]
         back_width = np.shape(background)[1]
 
-        mask_array = [np.zeros_like(background[:, :, 0]) for _ in range(len(templates))]
+        mask_arrays = []
 
-        for k in range(len(templates)):
-            # if len(templates) > 0:
+        rand_idx_array = np.random.permutation(len(templates))
+        # print(np.shape(templates))
+        col = 1
+        for idx in rand_idx_array:
+            mask_array = np.zeros_like(background[:, :, 0])
+            template = templates[idx]
+            template_mask = template_masks[idx]
+            temp_height = np.shape(template)[0]
+            temp_width = np.shape(template)[1]
+            y_coord = np.random.randint(0, back_height - temp_height)
+            x_coord = np.random.randint(0, back_width - temp_width)
+            y1, y2 = y_coord, y_coord + temp_height
+            x1, x2 = x_coord, x_coord + temp_width
 
-            rand_idx_array = np.random.permutation(len(templates[k]))
-            # print(np.shape(templates))
-            col = 1
-            for idx in rand_idx_array:
-                template = templates[k][idx]
-                template_mask = template_masks[k][idx]
-                temp_height = np.shape(template)[0]
-                temp_width = np.shape(template)[1]
-                y_coord = np.random.randint(0, back_height - temp_height)
-                x_coord = np.random.randint(0, back_width - temp_width)
-                y1, y2 = y_coord, y_coord + temp_height
-                x1, x2 = x_coord, x_coord + temp_width
+            for y in range(temp_height):
+                for x in range(temp_width):
+                    if template_mask[y, x] > 0:
+                        mask_array[y1 + y, x1 + x] = template_mask[y, x] * col
+            mask_arrays.append(mask_array) 
+            col += 1
 
-                for y in range(temp_height):
-                    for x in range(temp_width):
-                        if template_mask[y, x] > 0:
-                            mask_array[k][y1 + y, x1 + x] = template_mask[y, x] * col
-                        # mask_array[y1:y2, x1:x2] = template_mask * count_temp_cumsum[i]
-                col += 1
+            background_mask = 1.0 - template_mask
+            chanel = np.random.randint(0, 3)
+            background[y1:y2, x1:x2, chanel] = (
+                    template_mask * template[:, :, chanel] + background_mask * background[y1:y2, x1:x2, chanel])
 
-                background_mask = 1.0 - template_mask
-                chanel = np.random.randint(0, 3)
-                background[y1:y2, x1:x2, chanel] = (
-                        template_mask * template[:, :, chanel] + background_mask * background[y1:y2, x1:x2, chanel])
-
-        return background, mask_array
+        return background, mask_arrays
 
     def rotate_image_keep_size(self, img, degreesCCW, scaleFactor=1):
         (oldY, oldX) = img.shape[:2]  # note: numpy uses (y,x) convention but most OpenCV functions use (x,y)
@@ -216,14 +207,9 @@ class AugmentedDataset():
                 template_mask = cv2.resize(self.template_masks[j], dsize=(0, 0), fx=temp_normalization,
                                            fy=temp_normalization, interpolation=cv2.INTER_AREA)
 
-                rand = np.random.randint(1, self.max_templates + 1)
-
-                if rand > 0:
-                    augmented_templates, augmented_template_masks = self.augment_templates(template, template_mask,
-                                                                                           rand)
-                    stitch_templates.append(augmented_templates)
-                    stitch_template_masks.append(augmented_template_masks)
-                temp_count.append(rand)
+                augmented_template, augmented_template_mask = self.augment_templates(template, template_mask)
+                stitch_templates.append(augmented_template)
+                stitch_template_masks.append(augmented_template_mask)
 
             background_angle = np.random.uniform(-self.max_augm_rot, self.max_augm_rot)
             # background = self.rotate_image(aug_mask[k], background_angle)
