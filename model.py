@@ -10,7 +10,7 @@ from detection.engine import train_one_epoch
 from detection.engine import evaluate
 
 # Finetuning Mask-R-CNN
-num_classes = 4  # counting the background
+num_classes = 113  # counting the background
 # load an instance segmentation model pre-trained on COCO
 model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
 

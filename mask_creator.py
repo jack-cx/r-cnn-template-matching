@@ -4,6 +4,11 @@ import os
 import time
 import shutil
 
+COLORS = [[125, 255, 135], [245, 185, 80], [175, 255, 80],
+        [45, 135, 250], [35, 85, 255], [37, 111, 253],
+        [100, 255, 165], [255, 240, 35], [170, 155, 20], [155, 250, 100],
+        [155, 255, 100], [155, 125, 240], [60, 255, 200]]
+
 
 class AugmentedDataset():
     def __init__(self, root):
@@ -63,7 +68,17 @@ class AugmentedDataset():
 
         return template, template_mask
 
-    def stitch_templates_to_background(self, background, templates, template_masks, temp_count):
+
+    def random_color(self):
+        idx = np.random.randint(0, len(COLORS))
+        return COLORS[idx]
+
+    def set_color(self, img, color):
+        img[:, :, 0] = color[0]
+        img[:, :, 1] = color[1]
+        img[:, :, 2] = color[2]
+
+    def stitch_templates_to_background(self, background, templates, template_masks):
         back_height = np.shape(background)[0]
         back_width = np.shape(background)[1]
 
@@ -75,6 +90,7 @@ class AugmentedDataset():
         for idx in rand_idx_array:
             mask_array = np.zeros_like(background[:, :, 0])
             template = templates[idx]
+            self.set_color(template, self.random_color())
             template_mask = template_masks[idx]
             temp_height = np.shape(template)[0]
             temp_width = np.shape(template)[1]
@@ -91,9 +107,10 @@ class AugmentedDataset():
             col += 1
 
             background_mask = 1.0 - template_mask
-            chanel = np.random.randint(0, 3)
-            background[y1:y2, x1:x2, chanel] = (
-                    template_mask * template[:, :, chanel] + background_mask * background[y1:y2, x1:x2, chanel])
+
+            for i in range(3):            
+                background[y1:y2, x1:x2, i] = (
+                        template_mask * template[:, :, i] + background_mask * background[y1:y2, x1:x2, i])
 
         return background, mask_arrays
 
@@ -196,7 +213,6 @@ class AugmentedDataset():
 
             stitch_templates = []
             stitch_template_masks = []
-            temp_count = []
             for j, template in self.random_select_templates(3):
                 template_size = template.shape[0] * template.shape[1]
 
@@ -212,9 +228,8 @@ class AugmentedDataset():
                 stitch_template_masks.append(augmented_template_mask)
 
             background_angle = np.random.uniform(-self.max_augm_rot, self.max_augm_rot)
-            # background = self.rotate_image(aug_mask[k], background_angle)
-            aug_img, aug_mask = self.stitch_templates_to_background(background, stitch_templates, stitch_template_masks,
-                                                                    temp_count)
+            
+            aug_img, aug_mask = self.stitch_templates_to_background(background, stitch_templates, stitch_template_masks)
 
             # rotate the stitched images and masks for rotation augmentation
             for k in range(len(aug_mask)):
@@ -259,6 +274,6 @@ os.mkdir("dataset/images")
 os.mkdir("dataset/masks")
 # os.mkdir("dataset/visible_masks")
 dataset = AugmentedDataset(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images'))
-dataset.get_train_data(5)
+dataset.get_train_data(10000)
 end = time.time()
 print(end - start)
