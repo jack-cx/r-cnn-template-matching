@@ -75,14 +75,15 @@ lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
 # let's train it for 50 epochs
 num_epochs = 50
 
-for epoch in range(num_epochs):
-    # train for one epoch, printing every 10 iterations
-    train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=1)
-    # update the learning rate
-    lr_scheduler.step()
-    # evaluate on the test dataset
-    evaluate(model, data_loader_test, device=device)
-    # TODO ADD early stopping
+if __name__ == '__main__':
+    for epoch in range(num_epochs):
+        # train for one epoch, printing every 10 iterations
+        train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=1)
+        # update the learning rate
+        lr_scheduler.step()
+        # evaluate on the test dataset
+        evaluate(model, data_loader_test, device=device)
+        # TODO ADD early stopping
 
-# save model for later use
-torch.save(model.state_dict(), "model.pth")
+    # save model for later use
+    torch.save(model.state_dict(), "model.pth")

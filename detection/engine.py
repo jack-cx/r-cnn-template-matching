@@ -89,10 +89,8 @@ def evaluate(model, data_loader, device):
         images = list(img.to(device) for img in images)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-        torch.cuda.synchronize()
         model_time = time.time()
         outputs = model(images)
-
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time
 
