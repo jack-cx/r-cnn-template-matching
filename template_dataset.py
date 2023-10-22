@@ -46,6 +46,8 @@ class TemplateDataset(object):
                 ymin = np.min(pos[0])
                 ymax = np.max(pos[0])
                 boxes.append([xmin, ymin, xmax, ymax])
+                if xmin == xmax and ymin == ymax:
+                    print(m)
             # save correct labels for training
             labels.extend([n + 1 for _ in range(num_objs)])
             final_masks.extend(masks)

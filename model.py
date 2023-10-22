@@ -43,12 +43,12 @@ test_dataset = TemplateDataset("dataset", test_transform)
 val_size = int((len(dataset) / 100) * 20)
 torch.manual_seed(1)
 indices = torch.randperm(len(dataset)).tolist()
-dataset = torch.utils.data.Subset(dataset, indices[:-val_size])
+#dataset = torch.utils.data.Subset(dataset, indices[:-val_size])
 dataset_test = torch.utils.data.Subset(test_dataset, indices[-val_size:])
 
 # define training and validation data loaders
 data_loader = torch.utils.data.DataLoader(
-    dataset, batch_size=2, shuffle=True, num_workers=4,
+    dataset, batch_size=1, shuffle=True, num_workers=1,
     collate_fn=utils.collate_fn)
 
 data_loader_test = torch.utils.data.DataLoader(
