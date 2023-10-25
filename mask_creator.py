@@ -244,6 +244,31 @@ class AugmentedDataset():
             sigma = np.random.uniform(self.max_blur)
             #aug_img = self.blurr_image(aug_img, sigma)
 
+            skip = False
+            for mask in aug_mask:
+                obj_ids = np.unique(mask)
+                # first id is the background, so remove it
+                obj_ids = obj_ids[1:]
+                # split the color-encoded mask into a set
+                # of binary masks
+                masks = mask == obj_ids[:, None, None]
+                # get bounding box coordinates for each mask
+                num_objs = len(obj_ids)
+                # save bounding box
+                for j in range(num_objs):
+                    pos = np.where(masks[j])
+                    xmin = np.min(pos[1])
+                    xmax = np.max(pos[1])
+                    ymin = np.min(pos[0])
+                    ymax = np.max(pos[0])
+                if xmin == xmax and ymin == ymax:
+                    print("error mask:")
+                    cv2.imwrite("error{}.png".format(i), aug_img)
+                    skip = True
+
+            if skip:
+                continue                    
+
             cv2.imwrite("dataset/images/{}.png".format(i), aug_img)
             os.mkdir("dataset/masks/{}".format(i))
             # os.mkdir("dataset/visible_masks/{}".format(i))
@@ -274,6 +299,6 @@ os.mkdir("dataset/images")
 os.mkdir("dataset/masks")
 # os.mkdir("dataset/visible_masks")
 dataset = AugmentedDataset(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images'))
-dataset.get_train_data(500)
+dataset.get_train_data(50000)
 end = time.time()
 print(end - start)
