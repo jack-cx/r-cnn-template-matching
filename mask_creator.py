@@ -232,8 +232,8 @@ class AugmentedDataset():
             aug_img, aug_mask = self.stitch_templates_to_background(background, stitch_templates, stitch_template_masks)
 
             # rotate the stitched images and masks for rotation augmentation
-            for k in range(len(aug_mask)):
-                aug_mask[k] = self.rotate_image(aug_mask[k], background_angle, cv2.INTER_LINEAR)
+            #for k in range(len(aug_mask)):
+            #    aug_mask[k] = self.rotate_image(aug_mask[k], background_angle, cv2.INTER_LINEAR)
             #aug_img = self.rotate_image(aug_img, background_angle)
 
             # change the illumination of the stitches images for illumination augmentation
