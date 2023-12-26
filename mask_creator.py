@@ -4,6 +4,11 @@ import os
 import time
 import shutil
 
+COLORS = [[125, 255, 135], [245, 185, 80], [175, 255, 80],
+        [45, 135, 250], [35, 85, 255], [37, 111, 253],
+        [100, 255, 165], [255, 240, 35], [170, 155, 20], [155, 250, 100],
+        [155, 255, 100], [155, 125, 240], [60, 255, 200]]
+
 
 class AugmentedDataset():
     def __init__(self, root):
@@ -18,10 +23,10 @@ class AugmentedDataset():
         self.max_templates = 3
         # maximum relation between background to template
         # the larger this value, the smaller is the maximum template size relative to its background
-        self.max_temp_back_rel = 20
+        self.max_temp_back_rel = 2
         # min scale of template when scaling the image down
         # the larger this value, the larger is the minimum template size relative to its background
-        self.min_augm_scale = 0.7
+        self.augm_scale = 1
         # max rotation angle in the augmentation
         self.max_augm_rot = 20.0
         self.max_augm_rot_tem = 40.0
@@ -41,7 +46,7 @@ class AugmentedDataset():
         for template_name in imgs_templates:
             template = cv2.imread(os.path.join(self.root, 'templates', template_name), cv2.IMREAD_UNCHANGED)
             alpha_channel = template[:, :, 3]
-            _, template_mask = cv2.threshold(alpha_channel, 254, 1, cv2.THRESH_BINARY)
+            _, template_mask = cv2.threshold(alpha_channel, 1, 1, cv2.THRESH_BINARY)
             template_mask = template_mask.reshape((alpha_channel.shape[0], alpha_channel.shape[1]))
             template_masks.append(template_mask)
         return template_masks
@@ -50,61 +55,65 @@ class AugmentedDataset():
         idx = np.random.randint(0, len(self.imgs_backgrounds))
         return self.imgs_backgrounds[idx]
 
-    def augment_templates(self, template, template_mask, amount):
-        augmented_templates = []
-        augmented_template_masks = []
-        for i in range(amount):
-            scale = np.random.uniform(self.min_augm_scale, 1.0)
-            template = cv2.resize(template, dsize=(0, 0), fx=scale, fy=scale)
-            template_mask = cv2.resize(template_mask, dsize=(0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-            angle = np.random.uniform(-self.max_augm_rot_tem, self.max_augm_rot_tem)
-            template = self.rotate_image_keep_size(template, angle)
-            template_mask = self.rotate_image_keep_size(template_mask, angle)
-            horizontal_perspective = np.random.uniform(-self.max_perspective, self.max_perspective)
-            vertical_perspective = np.random.uniform(-self.max_perspective, self.max_perspective)
-            template = self.perspective_transformation(template, horizontal_perspective, vertical_perspective)
-            template_mask = self.perspective_transformation(template_mask, horizontal_perspective, vertical_perspective)
+    def augment_templates(self, template, template_mask):
+        template = cv2.resize(template, dsize=(0, 0), fx=self.augm_scale, fy=self.augm_scale)
+        template_mask = cv2.resize(template_mask, dsize=(0, 0), fx=self.augm_scale, fy=self.augm_scale, interpolation=cv2.INTER_AREA)
+        angle = np.random.uniform(-self.max_augm_rot_tem, self.max_augm_rot_tem)
+        template = self.rotate_image_keep_size(template, angle)
+        template_mask = self.rotate_image_keep_size(template_mask, angle)
+        horizontal_perspective = np.random.uniform(-self.max_perspective, self.max_perspective)
+        vertical_perspective = np.random.uniform(-self.max_perspective, self.max_perspective)
+        template = self.perspective_transformation(template, horizontal_perspective, vertical_perspective)
+        template_mask = self.perspective_transformation(template_mask, horizontal_perspective, vertical_perspective)
 
-            augmented_templates.append(template)
-            augmented_template_masks.append(template_mask)
+        return template, template_mask
 
-        return augmented_templates, augmented_template_masks
 
-    def stitch_templates_to_background(self, background, templates, template_masks, temp_count):
+    def random_color(self):
+        idx = np.random.randint(0, len(COLORS))
+        return COLORS[idx]
+
+    def set_color(self, img, color):
+        img[:, :, 0] = color[0]
+        img[:, :, 1] = color[1]
+        img[:, :, 2] = color[2]
+
+    def stitch_templates_to_background(self, background, templates, template_masks):
         back_height = np.shape(background)[0]
         back_width = np.shape(background)[1]
+        print((back_height, back_width))
+        mask_arrays = []
 
-        mask_array = [np.zeros_like(background[:, :, 0]) for _ in range(len(templates))]
+        rand_idx_array = np.random.permutation(len(templates))
+        # print(np.shape(templates))
+        col = 1
+        for idx in rand_idx_array:
+            mask_array = np.zeros_like(background[:, :, 0])
+            template = templates[idx]
+            self.set_color(template, self.random_color())
+            template_mask = template_masks[idx]
+            temp_height = np.shape(template)[0]
+            temp_width = np.shape(template)[1]
+            print((temp_height, temp_width))
+            y_coord = np.random.randint(0, back_height - temp_height)
+            x_coord = np.random.randint(0, back_width - temp_width)
+            y1, y2 = y_coord, y_coord + temp_height
+            x1, x2 = x_coord, x_coord + temp_width
 
-        for k in range(len(templates)):
-            # if len(templates) > 0:
+            for y in range(temp_height):
+                for x in range(temp_width):
+                    if template_mask[y, x] > 0:
+                        mask_array[y1 + y, x1 + x] = template_mask[y, x] * col
+            mask_arrays.append(mask_array) 
+            col += 1
 
-            rand_idx_array = np.random.permutation(len(templates[k]))
-            # print(np.shape(templates))
-            col = 1
-            for idx in rand_idx_array:
-                template = templates[k][idx]
-                template_mask = template_masks[k][idx]
-                temp_height = np.shape(template)[0]
-                temp_width = np.shape(template)[1]
-                y_coord = np.random.randint(0, back_height - temp_height)
-                x_coord = np.random.randint(0, back_width - temp_width)
-                y1, y2 = y_coord, y_coord + temp_height
-                x1, x2 = x_coord, x_coord + temp_width
+            background_mask = 1.0 - template_mask
 
-                for y in range(temp_height):
-                    for x in range(temp_width):
-                        if template_mask[y, x] > 0:
-                            mask_array[k][y1 + y, x1 + x] = template_mask[y, x] * col
-                        # mask_array[y1:y2, x1:x2] = template_mask * count_temp_cumsum[i]
-                col += 1
+            for i in range(3):            
+                background[y1:y2, x1:x2, i] = (
+                        template_mask * template[:, :, i] + background_mask * background[y1:y2, x1:x2, i])
 
-                background_mask = 1.0 - template_mask
-                chanel = np.random.randint(0, 3)
-                background[y1:y2, x1:x2, chanel] = (
-                        template_mask * template[:, :, chanel] + background_mask * background[y1:y2, x1:x2, chanel])
-
-        return background, mask_array
+        return background, mask_arrays
 
     def rotate_image_keep_size(self, img, degreesCCW, scaleFactor=1):
         (oldY, oldX) = img.shape[:2]  # note: numpy uses (y,x) convention but most OpenCV functions use (x,y)
@@ -183,6 +192,7 @@ class AugmentedDataset():
     def random_select_templates(self, n: int):
         random_templates = []
         for i in range(0, n):
+            np.random.seed(int(time.time()))
             r = np.random.randint(0, len(self.imgs_templates))
             template_path = os.path.join(self.root, 'templates', self.imgs_templates[r])
             img = cv2.imread(template_path, cv2.IMREAD_UNCHANGED)
@@ -196,19 +206,68 @@ class AugmentedDataset():
         aug_masks = []
 
         # data augmentation for background, template, and template mask
+        os.mkdir("dataset/simaese/")
+        templates = self.random_select_templates(1000)
+        for j, template in templates:
+            os.mkdir("dataset/simaese/{}".format(j))
+            for i in range(amount):
+                os.mkdir("dataset/simaese/{}/{}".format(j, i))
+                cv2.imwrite("dataset/simaese/{}/{}/t.png".format(j, i), template)
+                print("Image: {}".format(i))
+                background_name = self.get_random_background()
+                background = cv2.imread(os.path.join(self.root, 'backgrounds', background_name), cv2.IMREAD_UNCHANGED)
+                np.random.seed(i)
+                x_rand = np.random.randint(0, background.shape[1] - 90)
+                y_rand = np.random.randint(0, background.shape[0] - 90)
+                img_crop = background[y_rand: y_rand + 90, x_rand: x_rand + 90]
+                background_size = img_crop.shape[0] * img_crop.shape[1]
+
+                stitch_templates = []
+                stitch_template_masks = []
+                template_size = template.shape[0] * template.shape[1]
+                temp_back_rel = template_size / background_size
+                temp_normalization = 1 / np.sqrt(temp_back_rel * self.max_temp_back_rel)
+                template = cv2.resize(template, dsize=(0, 0), fx=temp_normalization, fy=temp_normalization,
+                                    interpolation=cv2.INTER_AREA)
+                template_mask = cv2.resize(self.template_masks[j], dsize=(0, 0), fx=temp_normalization,
+                                        fy=temp_normalization, interpolation=cv2.INTER_AREA)
+
+                augmented_template, augmented_template_mask = self.augment_templates(template, template_mask)
+                stitch_templates.append(augmented_template)
+                stitch_template_masks.append(augmented_template_mask)
+
+                aug_img, aug_mask = self.stitch_templates_to_background(img_crop, stitch_templates, stitch_template_masks)
+
+                # change the illumination of the stitches images for illumination augmentation
+                gamma = np.random.uniform(self.min_illum, self.max_illum)
+                aug_img = self.change_illumination(aug_img, gamma=gamma)
+
+                # introduce Gaussian blur to the stitches images for blur augmentation
+                sigma = np.random.uniform(self.max_blur)
+                #aug_img = self.blurr_image(aug_img, sigma)
+
+
+                cv2.imwrite("dataset/simaese/{}/{}/a.png".format(j, i), aug_img)
+
+
+
+
+
+        """
         for i in range(amount):
             print("Image: {}".format(i))
             background_name = self.get_random_background()
             background = cv2.imread(os.path.join(self.root, 'backgrounds', background_name), cv2.IMREAD_UNCHANGED)
-            background = cv2.resize(src=background, dsize=(300, 200))
-            background_size = background.shape[0] * background.shape[1]
+            np.random.seed(i)
+            x_rand = np.random.randint(0, background.shape[1] - 90)
+            y_rand = np.random.randint(0, background.shape[0] - 90)
+            img_crop = background[y_rand: y_rand + 90, x_rand: x_rand + 90]
+            background_size = img_crop.shape[0] * img_crop.shape[1]
 
             stitch_templates = []
             stitch_template_masks = []
-            temp_count = []
-            for j, template in self.random_select_templates(3):
+            for j, template in self.random_select_templates(1):
                 template_size = template.shape[0] * template.shape[1]
-
                 temp_back_rel = template_size / background_size
                 temp_normalization = 1 / np.sqrt(temp_back_rel * self.max_temp_back_rel)
                 template = cv2.resize(template, dsize=(0, 0), fx=temp_normalization, fy=temp_normalization,
@@ -216,23 +275,17 @@ class AugmentedDataset():
                 template_mask = cv2.resize(self.template_masks[j], dsize=(0, 0), fx=temp_normalization,
                                            fy=temp_normalization, interpolation=cv2.INTER_AREA)
 
-                rand = np.random.randint(1, self.max_templates + 1)
-
-                if rand > 0:
-                    augmented_templates, augmented_template_masks = self.augment_templates(template, template_mask,
-                                                                                           rand)
-                    stitch_templates.append(augmented_templates)
-                    stitch_template_masks.append(augmented_template_masks)
-                temp_count.append(rand)
+                augmented_template, augmented_template_mask = self.augment_templates(template, template_mask)
+                stitch_templates.append(augmented_template)
+                stitch_template_masks.append(augmented_template_mask)
 
             background_angle = np.random.uniform(-self.max_augm_rot, self.max_augm_rot)
-            # background = self.rotate_image(aug_mask[k], background_angle)
-            aug_img, aug_mask = self.stitch_templates_to_background(background, stitch_templates, stitch_template_masks,
-                                                                    temp_count)
+            
+            aug_img, aug_mask = self.stitch_templates_to_background(img_crop, stitch_templates, stitch_template_masks)
 
             # rotate the stitched images and masks for rotation augmentation
-            for k in range(len(aug_mask)):
-                aug_mask[k] = self.rotate_image(aug_mask[k], background_angle, cv2.INTER_LINEAR)
+            #for k in range(len(aug_mask)):
+            #    aug_mask[k] = self.rotate_image(aug_mask[k], background_angle, cv2.INTER_LINEAR)
             #aug_img = self.rotate_image(aug_img, background_angle)
 
             # change the illumination of the stitches images for illumination augmentation
@@ -243,25 +296,37 @@ class AugmentedDataset():
             sigma = np.random.uniform(self.max_blur)
             #aug_img = self.blurr_image(aug_img, sigma)
 
+            skip = False
+            for mask in aug_mask:
+                obj_ids = np.unique(mask)
+                # first id is the background, so remove it
+                obj_ids = obj_ids[1:]
+                # split the color-encoded mask into a set
+                # of binary masks
+                masks = mask == obj_ids[:, None, None]
+                # get bounding box coordinates for each mask
+                num_objs = len(obj_ids)
+                # save bounding box
+                for j in range(num_objs):
+                    pos = np.where(masks[j])
+                    xmin = np.min(pos[1])
+                    xmax = np.max(pos[1])
+                    ymin = np.min(pos[0])
+                    ymax = np.max(pos[0])
+                if xmin == xmax and ymin == ymax:
+                    print("error mask:")
+                    cv2.imwrite("error{}.png".format(i), aug_img)
+                    skip = True
+
+            if skip:
+                continue                    
+
             cv2.imwrite("dataset/images/{}.png".format(i), aug_img)
             os.mkdir("dataset/masks/{}".format(i))
-            # os.mkdir("dataset/visible_masks/{}".format(i))
 
-            # uncomment to show images created
-            # aug_imgs.append(aug_img)
-            # aug_masks.append(aug_mask)
-            # cv2.imshow('image', aug_img)
-            # cv2.waitKey()
             for k, aug_m in enumerate(aug_mask):
                 cv2.imwrite("dataset/masks/{}/{}.png".format(i, k), aug_m)
-
-                # uncomment to show images and masks created
-                # mask = cv2.threshold(aug_m, 0, 255, cv2.THRESH_BINARY)
-                # cv2.imshow('mask', mask[1])
-                # cv2.waitKey()
-
-                # cv2.imwrite("dataset/visible_masks/{}/{}.png".format(i, k), mask[1])
-        # return aug_imgs, aug_masks
+            """
 
 
 start = time.time()
@@ -272,6 +337,6 @@ os.mkdir("dataset")
 os.mkdir("dataset/images")
 os.mkdir("dataset/masks")
 dataset = AugmentedDataset(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images'))
-dataset.get_train_data(5)
+dataset.get_train_data(10)
 end = time.time()
 print(end - start)
